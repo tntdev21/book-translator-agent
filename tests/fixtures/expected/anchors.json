@@ -1,0 +1,17 @@
+{
+  "vietnamese_sections": [
+    "loi-cong-hien",
+    "de-tu",
+    "loi-noi-dau-cua-tac-gia"
+  ],
+  "chapters": [
+    "chuong-1",
+    "chuong-2",
+    "chuong-3"
+  ],
+  "special_chars": {
+    "Lời cống hiến": "loi-cong-hien",
+    "Đề từ": "de-tu",
+    "Author's Note": "authors-note"
+  }
+}
