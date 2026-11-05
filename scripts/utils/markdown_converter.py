@@ -777,6 +777,14 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
             i += 1
             continue
 
+        # Comic caption / quote line ("> text", GitBook import): one caption paragraph per line.
+        if stripped.startswith('> ') or stripped == '>':
+            text = stripped[1:].strip()
+            if text:
+                html_parts.append(f'<p class="caption">{text}</p>')
+            i += 1
+            continue
+
         # Figure/table caption ("Hình X.Y: ...", "Bảng X.Y: ..."): own paragraph, styled
         # italic and one size smaller via the .caption class.
         if re.match(r'^\**\s*(Hình|Bảng)\s+(\d+|[A-Z])\.\d+\s*:', stripped):

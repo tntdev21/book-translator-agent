@@ -168,6 +168,12 @@ def test_figure_and_table_captions_get_caption_class():
     assert 'class="caption">Hình 7.9 cho thấy' not in html
 
 
+
+def test_quote_lines_render_as_caption_paragraphs():
+    html = markdown_to_html_with_dialogue("> Vui thật.\n> NYAAH!\n\nĐoạn văn thường.")
+    assert '<p class="caption">Vui thật.</p>' in html and '<p class="caption">NYAAH!</p>' in html
+    assert "&gt;" not in html and "> Vui" not in html
+
 def test_double_asterisk_renders_strong_not_literal():
     html = markdown_to_html_with_dialogue("**Tóm tắt** Chương này giới thiệu *PCG*.\n\nVol. **2**(3), 1–10. Đỉnh v**n** là phòng **n**")
     assert "<strong>Tóm tắt</strong> Chương" in html and "<em>PCG</em>" in html
