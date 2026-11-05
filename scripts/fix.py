@@ -19,6 +19,7 @@ AUTOMATIC WORKFLOW:
     Step 1.6: Normalize page markers (<!-- Page N -->)
     Step 2: Fix sentence breaks (uses auto-extracted names)
     Step 3: Normalize dashes
+    Step 3.5: Repair PDF-extraction artefacts (split diacritics, (cid:N) glyphs)
     Step 4: Fix person name capitalization
     Step 5: Check formatting
 """
@@ -71,6 +72,11 @@ def parse_arguments() -> argparse.Namespace:
         '--skip-person-names',
         action='store_true',
         help='Skip person name capitalization fixes'
+    )
+    parser.add_argument(
+        '--skip-diacritics',
+        action='store_true',
+        help='Skip PDF-extraction artefact repair (split diacritics, (cid:N) glyphs)'
     )
     parser.add_argument(
         '--skip-cjk',
@@ -376,6 +382,26 @@ def normalize_dashes_step(files: List[Path]) -> int:
     return total_changes
 
 
+def fix_diacritics_step(files: List[Path], cfg: BookConfig, fix: bool, backup: bool) -> int:
+    """Step 3.5: Recombine split diacritics and map per-book (cid:N) glyph codes."""
+    print("\n🔤 Step 3.5: Repairing PDF-extraction artefacts (diacritics, glyph codes)...")
+    from utils.fix_diacritics import fix_diacritics_file, load_replacements
+
+    style_dir = getattr(cfg, "style_dir", None)
+    replacements = load_replacements(style_dir / "glyph_repairs.json") if style_dir else {}
+    total = 0
+    for filepath in files:
+        n = fix_diacritics_file(filepath, replacements, backup=backup, check_only=not fix)
+        if n > 0:
+            verb = "repaired" if fix else "found"
+            print(f"  ✓ {filepath.name}: {n} artefacts {verb}")
+            total += n
+
+    if total == 0:
+        print("  ✅ No extraction artefacts")
+    return total
+
+
 def fix_person_names_step(files: List[Path], backup: bool) -> int:
     """Step 4: Fix person name capitalization in all files."""
     print("\n👤 Step 4: Fixing person name capitalization...")
@@ -471,6 +497,7 @@ def main() -> int:
     print()
 
     total_fixes = 0
+    artefacts = 0
 
     # Step 0: Extract book-specific names (runs automatically for new books)
     if cfg and not args.skip_name_extraction and not args.check_only:
@@ -503,6 +530,15 @@ def main() -> int:
     if not args.skip_dashes and not args.check_only:
         total_fixes += normalize_dashes_step(files)
 
+    # Step 3.5: PDF-extraction artefacts. --check-only reports without writing;
+    # found artefacts count as outstanding issues there.
+    if not getattr(args, "skip_diacritics", False):
+        found = fix_diacritics_step(files, cfg, fix=not args.check_only, backup=not args.no_backup)
+        if args.check_only:
+            artefacts = found
+        else:
+            total_fixes += found
+
     # Step 4: Fix person names
     if not args.skip_person_names and not args.check_only:
         total_fixes += fix_person_names_step(files, backup=not args.no_backup)
@@ -510,6 +546,9 @@ def main() -> int:
     # Step 5: Check formatting
     all_issues = check_formatting_step(files)
     print_formatting_issues(all_issues)
+    if artefacts:
+        all_issues.setdefault("(extraction artefacts)", []).extend(
+            {"line": 0, "type": "extraction artefact"} for _ in range(artefacts))
 
     # Print summary
     print_summary(args.check_only, total_fixes, all_issues, args.no_backup)

@@ -121,6 +121,7 @@ def fix_sentence_breaks(filepath, backup=True, preserve_standalone_markers=None)
         fixes_this_pass = 0
         in_toc = False  # Track if we're in TOC section
         in_copyright = False  # Track if we're in copyright/book list section
+        in_fence = False  # Inside a ``` code/pseudocode block: line breaks are layout
 
         while i < len(lines):
             line = lines[i].rstrip()
@@ -136,6 +137,15 @@ def fix_sentence_breaks(filepath, backup=True, preserve_standalone_markers=None)
 
             # Skip processing lines within copyright section
             if in_copyright:
+                fixed_lines.append(lines[i])
+                i += 1
+                continue
+
+            # Never join lines of a fenced code/pseudocode block (indented wrap lines
+            # such as "            already in the room" start lowercase by design)
+            if line.lstrip().startswith('```') or in_fence:
+                if line.lstrip().startswith('```'):
+                    in_fence = not in_fence
                 fixed_lines.append(lines[i])
                 i += 1
                 continue

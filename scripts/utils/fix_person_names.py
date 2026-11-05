@@ -39,6 +39,11 @@ def load_person_names(terms_file: Optional[Path] = None) -> Set[str]:
                     if len(parts) >= 3:
                         english = parts[0].strip()
                         context = parts[2].strip().lower()
+                        # Person names are capitalised; a lowercase entry such as
+                        # "diamond-square | ... | algorithm name" is a common term
+                        # whose context merely contains the word "name".
+                        if not english or not english[0].isupper():
+                            continue
                         if 'name' in context or is_person_name_pattern(english):
                             names.add(english)
 

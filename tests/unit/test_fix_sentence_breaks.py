@@ -329,3 +329,16 @@ Regular text here."""
 
         result = test_file.read_text()
         assert "> This is a quote." in result
+
+    def test_fix_sentence_breaks_skips_code_fence(self, tmp_path: Path) -> None:
+        """Indented pseudocode wrap lines inside ``` start lowercase but are layout."""
+        test_file = tmp_path / "test.md"
+        content = ("```\n    iteratively add to the room all squares with three neighbours\n"
+                   "        already in the room\n    N=N+1\n```\n\nThis is a broken\nsentence.\n")
+        test_file.write_text(content)
+
+        fix_sentence_breaks(test_file, backup=False)
+
+        result = test_file.read_text()
+        assert "neighbours\n        already in the room\n" in result
+        assert "This is a broken sentence." in result

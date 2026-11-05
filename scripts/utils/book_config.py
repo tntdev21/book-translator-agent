@@ -71,6 +71,9 @@ class BookConfig:
     # PDF extraction overrides, e.g. {"x_tolerance": 1.5} for tightly kerned
     # sources whose word gaps fall under pdfplumber's default of 3pt.
     extraction: dict = field(default_factory=dict)
+    # Export-time chapter heading templates, e.g.
+    # {"chapter_format": "Chương {n}: {title}", "appendix_format": "Phụ lục {n}: {title}"}
+    headings: dict = field(default_factory=dict)
 
     # -- resolved paths ---------------------------------------------------
 
@@ -100,6 +103,11 @@ class BookConfig:
     @property
     def cover_path(self) -> Path:
         return self._path("cover")
+
+    @property
+    def images_dir(self) -> Path:
+        """Cropped figures (``fig-X-Y.png``); optional, absent for most books."""
+        return self.root / "images"
 
     @property
     def samples_dir(self) -> Path:
@@ -222,7 +230,8 @@ def load_book(book_id: Optional[str] = None) -> BookConfig:
     known = {
         "id", "title_en", "title_vi", "author", "translator", "language_pair",
         "category", "epub_identifier", "chunk_size", "font",
-        "derivation", "paths", "page_sizes", "rights", "extraction",
+        "derivation", "paths", "page_sizes", "rights", "extraction", "headings",
+        "subtitle_vi",
     }
     unknown = set(data) - known
     if unknown:

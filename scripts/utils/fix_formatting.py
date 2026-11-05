@@ -57,9 +57,17 @@ def check_file(filepath):
             blank_count = 0
 
     # Check for unexpected line breaks in middle of sentences
+    in_fence = False
     for i in range(len(lines) - 1):
         line = lines[i].rstrip()
         next_line = lines[i + 1].rstrip()
+
+        # Fenced code/pseudocode: line breaks are layout, not sentence breaks
+        if line.lstrip().startswith('```'):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
 
         # Skip empty lines, comments, and markdown elements
         if not line or not next_line:
