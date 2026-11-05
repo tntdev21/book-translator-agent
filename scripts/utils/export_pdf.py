@@ -346,6 +346,11 @@ def create_pdf(md_content, output_path, title="un-titled", proof_mode=False, cov
     }
 
     /* Quote attribution: right-aligned, like the source */
+    blockquote.praise {
+        font-style: italic;
+        margin: 1em 2em 0;
+    }
+    blockquote.praise p { text-indent: 0; margin: 0; }
     .quote-attribution {
         text-align: right;
         text-indent: 0;

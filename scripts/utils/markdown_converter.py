@@ -32,6 +32,28 @@ FRONT_OPEN_RE = re.compile(r'^<!--\s*front\s+id="([a-z0-9-]+)"(?:\s+class="([a-z
 # Quote attribution on its own line: <small>–NAME</small> [optional trailing text]
 ATTRIBUTION_RE = re.compile(r'^<small>[-–—]\s*[^<]*</small>')
 FRONT_CLOSE_RE = re.compile(r'^<!--\s*/front\s*-->$')
+# A rendered paragraph that is a quotation or a star rating: starts with a quote mark
+# or ⭐, or ends with a closing quote ('One of "50 Books …"').
+PRAISE_QUOTE_RE = re.compile(r'^<p(?: class="preserve-break")?>((?:["“⭐].*|.*["”]))</p>$', re.S)
+IMG_MD_RE = re.compile(r'^!\[([^\]]*)\]\(([^)\s]+)\)(?:\{width=(\d+(?:\.\d+)?)pt\})?$')
+
+
+def is_praise_attribution(lines: list[str], i: int) -> bool:
+    """Line i is a lone "- Source" line: blank lines around it, short, no end punctuation."""
+    text = lines[i].strip()[2:].strip()
+    prev_blank = i == 0 or not lines[i - 1].strip()
+    next_blank = i + 1 == len(lines) or not lines[i + 1].strip()
+    return (prev_blank and next_blank and 0 < len(text) <= 150
+            and not text.startswith('-')
+            and (not text.endswith(('.', '!', '?', '…', ':', ';'))
+                 or re.search(r'\b[A-Z][a-z]{0,3}\.$', text) is not None))  # "Fun, Inc."
+
+
+def figure_html(match: re.Match) -> str:
+    """<figure> for an injected image line ``![alt](src){width=Npt}``."""
+    style = f' style="width:{match.group(3)}pt"' if match.group(3) else ''
+    return (f'<figure class="figure-image"><img src="{escape(match.group(2))}" '
+            f'alt="{escape(match.group(1))}"{style}/></figure>')
 
 
 def load_toc_language_config():
@@ -497,7 +519,9 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
             while i < len(lines) and not FRONT_CLOSE_RE.match(lines[i].strip()):
                 inner = lines[i].strip()
                 if inner:
-                    if ATTRIBUTION_RE.match(inner):
+                    if IMG_MD_RE.match(inner):
+                        html_parts.append(figure_html(IMG_MD_RE.match(inner)))
+                    elif ATTRIBUTION_RE.match(inner):
                         html_parts.append(f'<p class="quote-attribution">{inner}</p>')
                     else:
                         html_parts.append(inner if inner.startswith('<p') else f'<p>{inner}</p>')
@@ -510,15 +534,12 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
             continue
 
         # Figure image injected at export: ![alt](src)
-        img_match = re.match(r'^!\[([^\]]*)\]\(([^)\s]+)\)(?:\{width=(\d+(?:\.\d+)?)pt\})?$', stripped)
+        img_match = IMG_MD_RE.match(stripped)
         if img_match:
             # Keep a table caption ("Bảng X.Y: ...") on the same page as its table image.
             if html_parts and re.match(r'^<p( class="[^"]*")?>Bảng \d', html_parts[-1]):
                 html_parts[-1] = re.sub(r'^<p( class="[^"]*")?>', '<p class="caption table-caption">', html_parts[-1])
-            style = f' style="width:{img_match.group(3)}pt"' if img_match.group(3) else ''
-            html_parts.append(
-                f'<figure class="figure-image"><img src="{escape(img_match.group(2))}" '
-                f'alt="{escape(img_match.group(1))}"{style}/></figure>')
+            html_parts.append(figure_html(img_match))
             i += 1
             continue
 
@@ -726,6 +747,17 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
             html_parts.append('</div>')
             i += 1
             continue
+
+        # Praise blurb: a quoted paragraph followed by a standalone "- Source" line
+        # ("- David Jaffe, creative director of God of War") → blockquote + right-aligned
+        # attribution. Real dialogue lines end in punctuation or come in runs.
+        if stripped.startswith('- ') and is_praise_attribution(lines, i) and html_parts:
+            quote = PRAISE_QUOTE_RE.match(html_parts[-1])
+            if quote:
+                html_parts[-1] = f'<blockquote class="praise"><p>{quote.group(1)}</p></blockquote>'
+                html_parts.append(f'<p class="quote-attribution">— {stripped[2:]}</p>')
+                i += 1
+                continue
 
         # Dialogue detection
         if stripped.startswith('- '):

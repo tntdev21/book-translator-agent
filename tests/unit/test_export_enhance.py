@@ -179,3 +179,23 @@ def test_code_fence_keeps_indentation_and_row_breaks():
         "**Room algorithm**\n\n```\nN=0\n    If a 3x3 block is empty\n        mark it\nEnd Scan\n```\n\nOnce marked.")
     assert '<pre class="code-listing">N=0\n    If a 3x3 block is empty\n        mark it\nEnd Scan</pre>' in html
     assert "<p>Once marked.</p>" in html or ">Once marked.<" in html
+
+
+def test_praise_blurb_renders_quote_and_right_attribution():
+    html = markdown_to_html_with_dialogue(
+        '"Cuốn sách hay nhất."\n\n- David Jaffe, giám đốc sáng tạo\n\n⭐️⭐️⭐️\n\n- Midwest Book Review\n\n'
+        '"Kinh điển."\n\n- Tom Chatfield, Fun, Inc.\n\n'
+        'Anh ấy nói:\n\n- Đi thôi.\n\n"Câu trích."\n\n- Một\n- Hai')
+    assert '<blockquote class="praise"><p>"Cuốn sách hay nhất."</p></blockquote>' in html
+    assert '<p class="quote-attribution">— David Jaffe, giám đốc sáng tạo</p>' in html
+    assert '<blockquote class="praise"><p>⭐️⭐️⭐️</p></blockquote>' in html
+    assert '<p class="quote-attribution">— Tom Chatfield, Fun, Inc.</p>' in html
+    # dialogue (ends in punctuation) and dash runs stay dialogue
+    assert 'class="dialogue-line">- Đi thôi.' in html and 'class="dialogue-line">- Một' in html
+
+
+def test_image_inside_front_block_renders_as_figure():
+    html = markdown_to_html_with_dialogue(
+        '<!-- front id="dedication" -->\n\n![](images/comic-dedication.png)\n\nTặng các con.\n\n<!-- /front -->')
+    assert '<figure class="figure-image"><img src="images/comic-dedication.png"' in html
+    assert '<p>![' not in html
