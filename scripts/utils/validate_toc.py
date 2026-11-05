@@ -67,7 +67,7 @@ class TOCValidator:
 
     TOC_HEADERS = ('MỤC LỤC', 'TABLE OF CONTENTS', 'CONTENTS')
     CHAPTER_PATTERN = re.compile(r'^CHƯƠNG (\d+)$')
-    MERGED_TEXT_PATTERN = re.compile(r'^CHƯƠNG \d+ [A-ZÁÀẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ]', re.IGNORECASE)
+    MERGED_TEXT_PATTERN = re.compile(r'^CHƯƠNG \d+ [A-ZÁÀẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ]')  # uppercase heading run-in only; prose "Chương 3 thảo luận…" is fine
     LOWERCASE_PATTERN = re.compile(r'^Chương \d+$')
 
     def __init__(self, chunk_dir: Path):

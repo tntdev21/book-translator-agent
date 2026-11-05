@@ -138,3 +138,10 @@ def test_fill_title_page_fills_only_empty_block():
 
 def test_fill_title_page_without_block_is_noop():
     assert fill_title_page(BOOK, "Tựa") == BOOK
+
+
+def test_merged_text_check_ignores_prose_starting_with_chuong():
+    from utils.validate_toc import TOCValidator
+    pat = TOCValidator.MERGED_TEXT_PATTERN
+    assert pat.match('CHƯƠNG 3 GIỚI THIỆU')
+    assert not pat.match('Chương 3 thảo luận ví dụ cụ thể về việc tạo hầm ngục')
