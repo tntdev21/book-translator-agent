@@ -209,6 +209,11 @@ additional to the manifest `usage` block and the TSV line.
 - Failed acceptance → one RETRY (`RETRY: <CHUNK> <reason>`, REWORK JSON expected).
   Second failure → halt + escalate.
 - Not allowed: one shared rework agent per batch.
+- Translator `notes` flag `source-garbled` (interleaved text streams, broken equations):
+  keep the chunk out of `qa_passed`, log it to the open-items report, and have a dev agent
+  repair `chunks/<CHUNK>.md` + `source/full_text.md` from the PDF (check for hidden text
+  layers: invisible fonts used on one page only). Then REWORK the block; never let a
+  translator reconstruct text or equations from the PDF on its own.
 
 ---
 
@@ -251,6 +256,23 @@ Run `./venv/bin/python scripts/utils/validate_toc.py --book <id>` before the fin
   (`review/human_<CHUNK>.r0.json`) of the **TOC chunk**: headings are canonical, the TOC
   is aligned to them. A missing front block traces to the source → report, human fixes.
 - Same editor re-reviews; re-run the check; clean → final report.
+
+Pre-export checklist (technical/illustrated books; record outcomes in the open-items report):
+- Figures: `scripts/extract_figures.py --book <id>` crops every `Fig. X.Y` into
+  `books/<id>/images/` (+ `figures.json`); export injects them before each `Hình X.Y` caption
+  and drops duplicated `(a)/(b)` sub-label lines. Spot-check crops, esp. page-spanning figures.
+- Tables / display equations that extract badly: crop as images (`table-N-M`, `eq-N-M`) and
+  REWORK the chunk to replace the plain-text block with `<!-- figure id="..." -->` (caption kept).
+- Caption-split paragraphs: `scripts/utils/reflow_captions.py --book <id>` must report 0
+  (a top-of-page caption between two halves of a sentence). Non-zero → delegate
+  `--apply` (moves lines only, source + chunks + translated) to a subagent (guard hook).
+  Export only warns; it never patches text.
+- Extraction artefacts: `(cid:N)` glyphs → per-book `style/glyph_repairs.json`; split
+  diacritics (`Mart´ınez`) are repaired by `fix.py` step 3.5. `fix.py --check-only` must be clean.
+- Chapter headings: `headings.chapter_format` / `appendix_format` in `book.yaml`
+  (e.g. `"Chương {n}: {title}"`) apply at export, TOC included.
+- `validate_toc.py` "Merged text" on body paragraphs that open with "Chương N …" is a known
+  false positive; export with `--force` after checking.
 
 ---
 

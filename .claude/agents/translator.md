@@ -59,11 +59,21 @@ not source: never translate or Read it. Run Python only via `./venv/bin/python`.
    mapped form; heading case follows the snapshot, consistent in the chunk; quote nesting
    mirrors the source, no quote dropped.
 2-3. Fix + validate in ONE chained Bash call (each check runs; read all output):
-   `S=books/<id>/chunks/<CHUNK>.md; T=books/<id>/translated/<CHUNK>.md; V=.claude/skills/translating/scripts; ./venv/bin/python scripts/fix.py $T --source $S --preserve-page-marker-boundaries --no-backup; ./venv/bin/python $V/compare-structure.py --source $S --translated $T; ./venv/bin/python $V/validate-translation.py --source $S --translated $T --glossary books/<id>/style/glossary.csv`
+   `export BOOK_ID=<id>; S=books/<id>/chunks/<CHUNK>.md; T=books/<id>/translated/<CHUNK>.md; V=.claude/skills/translating/scripts; ./venv/bin/python scripts/fix.py $T --source $S --preserve-page-marker-boundaries --no-backup; ./venv/bin/python $V/compare-structure.py --source $S --translated $T; ./venv/bin/python $V/validate-translation.py --source $S --translated $T --glossary books/<id>/style/glossary.csv`
 4. If `compare-structure.py` still reports `Page-Marker Boundary Mismatches` after the
    single `fix.py --preserve-page-marker-boundaries` run, report it as a finding in `notes`;
    leave `fix_py_clean`/`paragraphs_match` true; do not hand-edit; do not re-run `fix.py`.
    Any other residual issue: fix it (see Fixes); still failing → flag false, report.
+   Source-integrity rules (apply while translating):
+   - Garbled/merged source (two text streams interleaved, sentence fragments, broken
+     equations): translate only what is there, never reconstruct text, equations or
+     captions from memory or the PDF; flag the line range in `notes` as `source-garbled`
+     so the coordinator repairs the source.
+   - Footnotes are prose: translate them. Only the reference/bibliography list stays verbatim.
+   - HTML comment markers (`<!-- Page N -->`, `<!-- front ... -->`, `<!-- figure id="..." -->`)
+     are copied verbatim, never added or dropped.
+   - A source typo/slip whose meaning is clear (e.g. "bumps" for "bombs"): translate the
+     intended meaning and say so in `notes`.
 5. Collect candidate terms you coined or met first: `term | translation | context | <CHUNK>`
    (skip proper nouns and terms already in `_terms_compact.md`).
 
