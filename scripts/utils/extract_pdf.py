@@ -534,6 +534,44 @@ def _page_blocks(lines, body_size, margin_x0, indent_threshold, page_width):
 _LAYOUT_OPTIONS = {"layout", "skip_fonts"}
 
 
+_HIDDEN_MIN_CHARS = 200
+_MONOSPACE_HINTS = ("mon", "cour", "typewriter", "consol", "cmtt")
+
+
+def _drop_hidden_text_layers(raw_pages):
+    """Drop invisible duplicate text layers (e.g. a pasted thesis page under the real one).
+
+    Signature: a font used on exactly one page of the PDF with at least
+    `_HIDDEN_MIN_CHARS` characters there, while the same page also carries
+    >= that many characters of a font used on 3+ pages (the real body text).
+    Monospace faces are exempt. On such a page, every word set in a font that is
+    also single-page and shares the first two letters of the hidden font's name
+    (the TeX `CM*` family) is removed.
+    """
+    pages_of, chars_on = {}, []
+    for index, words in enumerate(raw_pages):
+        counts = Counter()
+        for word in words:
+            counts[word["fontname"].split("+")[-1]] += len(word["text"])
+        chars_on.append(counts)
+        for font in counts:
+            pages_of.setdefault(font, set()).add(index)
+    cleaned = []
+    for index, words in enumerate(raw_pages):
+        hidden = {f for f, n in chars_on[index].items()
+                  if len(pages_of[f]) == 1 and n >= _HIDDEN_MIN_CHARS
+                  and not any(h in f.lower() for h in _MONOSPACE_HINTS)}
+        has_body = any(len(pages_of[f]) >= 3 and n >= _HIDDEN_MIN_CHARS for f, n in chars_on[index].items())
+        if not (hidden and has_body):
+            cleaned.append(words)
+            continue
+        prefixes = {f[:2] for f in hidden}
+        drop = {f for f in chars_on[index] if len(pages_of[f]) == 1 and f[:2] in prefixes
+                and not any(h in f.lower() for h in _MONOSPACE_HINTS)}
+        cleaned.append([w for w in words if w["fontname"].split("+")[-1] not in drop])
+    return cleaned
+
+
 def _pdf_content(input_path, max_pages, x_tolerance, layout, skip_fonts, first_page, unknown_cids):
     """Extract one PDF; return `(markdown_without_final_newline, pages_used)`."""
     cid_repairs = _CID_REPAIRS_BY_SOURCE.get(_source_fingerprint(input_path), {})
@@ -548,6 +586,7 @@ def _pdf_content(input_path, max_pages, x_tolerance, layout, skip_fonts, first_p
                          for words in raw_pages]
         if layout == "technical":
             from .pdf_technical_layout import render_pages
+            raw_pages = _drop_hidden_text_layers(raw_pages)
             page_lines = [_line_groups(words, cid_repairs, unknown_cids, technical=True) for words in raw_pages]
             return render_pages(page_lines, [page.height for page in pages], first_page), total
         page_lines = [_line_groups(words, cid_repairs, unknown_cids) for words in raw_pages]
@@ -631,6 +670,10 @@ def extract_pdf(input_path, output_path, max_pages=None, x_tolerance=3, **option
         content += text
         first_page += used
         remaining = remaining - used if max_pages else None
+    if layout == "technical":
+        # TeX fonts emit spacing accents beside the letter (`Go¨del`); recombine them.
+        from .fix_diacritics import repair_text
+        content = repair_text(content)[0]
     content = content.lstrip("\n") + "\n"
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as file:

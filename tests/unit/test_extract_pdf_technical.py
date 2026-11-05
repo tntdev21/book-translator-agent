@@ -146,3 +146,69 @@ def test_max_pages_caps_total_across_pdfs(tmp_path, monkeypatch):
     assert "<!-- Page 3 -->" in out.read_text()
     extractor.extract_pdf(["a.pdf", "b.pdf"], str(out), max_pages=2, layout="technical")
     assert "<!-- Page 3 -->" not in out.read_text()
+
+
+def test_hidden_single_page_text_layer_dropped(tmp_path, monkeypatch):
+    """A one-page CM* text layer under the real Nimbus text is removed; real text stays."""
+    real = "NimbusRomNo9L-Regu"
+    pages = [[w("x" * 210, 50, 100, font=real)] for _ in range(3)]
+    pages[1] += [w("h" * 210, 50, 300, font="AB+CMR12"), w("ghost", 50, 330, font="AB+CMTI12")]
+    pages[1].append(w("keep", 50, 360, font="AB+StandardSym"))
+    text = run(tmp_path, monkeypatch, pages)
+    assert "hhhh" not in text and "ghost" not in text
+    assert "keep" in text and text.count("x" * 210) == 3
+
+
+def test_single_page_font_without_body_text_kept(tmp_path, monkeypatch):
+    pages = [[w("y" * 210, 50, 100, font="AB+CMR12")]]
+    assert "y" * 210 in run(tmp_path, monkeypatch, pages)
+
+
+def test_extract_recombines_split_accents(tmp_path, monkeypatch):
+    text = run(tmp_path, monkeypatch, [body() + [w("Go¨del", 50, 500)]])
+    assert "Gödel" in text
+
+
+def test_caption_at_page_top_does_not_split_paragraph(tmp_path, monkeypatch):
+    # A figure at the top of page 2 sits between the two halves of a sentence in reading order.
+    p1 = body() + [w("The", 50, 500), w("rule", 80, 500), w("(or", 110, 500)]
+    p2 = ([w("Fig.", 50, 90), w("1.1:", 80, 90), w("Caption", 110, 90)]
+          + [w("pixels)", 50, 130), w("relaxed.", 100, 130)]
+          + [w("filler", 50, 160 + i * 12) for i in range(30)])
+    text = run(tmp_path, monkeypatch, [p1, p2])
+    assert "The rule (or\n<!-- Page 2 -->\npixels) relaxed." in text
+    assert text.index("pixels) relaxed.") < text.index("Fig. 1.1: Caption")
+
+
+def test_caption_at_page_top_before_new_paragraph_keeps_order(tmp_path, monkeypatch):
+    p1 = body() + [w("Done.", 50, 500)]
+    p2 = ([w("Fig.", 50, 90), w("1.1:", 80, 90), w("Caption", 110, 90)]
+          + [w("Next", 60, 130), w("para.", 100, 130)]
+          + [w("filler", 50, 160 + i * 12) for i in range(30)])
+    text = run(tmp_path, monkeypatch, [p1, p2])
+    assert text.index("Fig. 1.1: Caption") < text.index("Next para.")
+
+
+def test_indented_list_item_body_stays_one_paragraph(tmp_path, monkeypatch):
+    # Hanging-indent list item: wrapped lines share the item's indent and must not each
+    # become their own paragraph; the next "b. " item still starts a new one.
+    item = [w("a.", 70, 500), w("one", 90, 500), w("works", 120, 500), w("as", 160, 500), w("an", 180, 500)]
+    cont = [w("attractor", 70, 512), w("and", 130, 512), w("repulsor.", 160, 512)]
+    nxt = [w("b.", 70, 524), w("Next", 90, 524), w("step.", 130, 524)]
+    text = run(tmp_path, monkeypatch, [body() + item + cont + nxt])
+    assert "a. one works as an attractor and repulsor." in text
+    assert "repulsor.\n\nb. Next step." in text
+
+
+def test_serif_pseudocode_under_bold_label_becomes_indented_code(tmp_path, monkeypatch):
+    # Pseudocode set in the body serif (not monospace): bold label, ragged lines on several
+    # indent levels -> fenced block, 4 spaces per level; the following paragraph stays prose.
+    label = [w("Room", 50, 400, MEDI), w("algorithm", 80, 400, MEDI)]
+    rows = [(50, "N=0"), (50, "Scan"), (72, "If empty"), (81, "mark it"), (81, "N=N+1"),
+            (72, "End If"), (50, "End Scan")]
+    code = [w(t, x, 424 + k * 12) for k, (x, t) in enumerate(rows)]
+    after = [w("Once", 62, 540), w("marked", 100, 540), w("x" * 40, 150, 540), w("as", 50, 552)]
+    text = run(tmp_path, monkeypatch, [body(20, 100) + label + code + after])
+    assert "**Room algorithm**\n\n```\nN=0\nScan\n    If empty\n        mark it\n        N=N+1\n" \
+           "    End If\nEnd Scan\n```" in text
+    assert "```\n\nOnce marked " in text

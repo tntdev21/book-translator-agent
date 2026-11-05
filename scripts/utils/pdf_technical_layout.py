@@ -34,6 +34,7 @@ import re
 
 _BULLET_RE = re.compile(r"^[•·▪‣]\s*")
 _ORDERED_RE = re.compile(r"^(\d{1,3})\.\s+(?=[A-Z(“\"*<`\[])")
+_SUBITEM_RE = re.compile(r"^([a-z]|\d{1,3}|[ivx]+)[.)]\s")   # "a. ", "2) ", "iv. " item starts
 _CAPTION_RE = re.compile(r"^(Fig\.|Table|Algorithm)\s+[0-9A-Z]+\.\d+[:.]")
 _LABEL_RE = re.compile(r"^(Chapter|Appendix|Part)\s+([A-Z]|\d+)$")
 _NUMBERING_RE = re.compile(r"^((?:[A-Z]|\d+)(?:\.\d+)+)\s")
@@ -137,12 +138,62 @@ def _render_heading(parts, chapter, italic, ctx):
     return f"{'#' * min(level, 6)} {text}"
 
 
+_PANEL_LABEL_RE = re.compile(r'^\([a-z]\)\s')
+
+
+def _is_panel_label(text):
+    """Figure panel label line such as "(a) Random map (b) CA map"."""
+    return bool(_PANEL_LABEL_RE.match(text)) and (len(text) < 160 or " (b) " in text)
+
+
+def _pseudocode_blocks(kept, body, margin, right):
+    """Indices of serif pseudocode set like the PDF's "Room identification algorithm": a short
+    standalone bold body-size label, then short ragged lines on several indent levels (some
+    deeper than a paragraph indent), ended by a paragraph gap. Returns {label_index: rows}."""
+    pitch, found = body * 1.2, {}
+    for i, line in enumerate(kept):
+        if not (_bold(line["font"]) and _bold(line["first_font"]) and "mon" not in line["font"]
+                and abs(line["size"] - body) < 1 and len(line["text"]) < 60
+                and line["x1"] < right - body * 4 and not _SENTENCE_END_RE.search(line["text"])):
+            continue
+        rows = []
+        for j in range(i + 1, len(kept)):
+            row, gap = kept[j], kept[j]["base"] - kept[j - 1]["base"]
+            if (gap > pitch * (2.2 if j == i + 1 else _PARA_GAP) or abs(row["size"] - body) >= 1
+                    or _bold(row["font"]) or "mon" in row["font"] or _BULLET_RE.match(row["text"])):
+                break
+            rows.append(j)
+        xs = [kept[j]["x0"] for j in rows]
+        short = sum(kept[j]["x1"] < right - body * 3 for j in rows)
+        if (len(rows) >= 3 and len({round(x / 3) for x in xs}) >= 3 and max(xs) > min(xs) + body * 1.5
+                and short >= len(rows) * .6):
+            found[i] = rows
+    return found
+
+
+def _indent_rows(rows):
+    """Pseudocode rows indented 4 spaces per distinct x level (PDF indents are uneven)."""
+    levels = sorted({round(row["x0"]) for row in rows})
+    rank = {x: k for k, x in enumerate(_merge_close(levels))}
+    return ["    " * rank[min(rank, key=lambda x: abs(x - row["x0"]))] + row["text"] for row in rows]
+
+
+def _merge_close(levels, tol=3):
+    merged = []
+    for x in levels:
+        if not merged or x - merged[-1] > tol:
+            merged.append(x)
+    return merged
+
+
 def page_blocks(lines, height, ctx):
     """Return `(blocks, continues_previous_page)` for one page of lines."""
     body, margin = ctx.body, ctx.margin
+    prev_kind, prev_text = ctx.last_kind, ctx.last_text  # last block of the previous page
     pitch = body * 1.2
-    blocks, notes = [], []
-    state = {"cur": None, "continues": False}
+    blocks, notes, kinds = [], [], []
+    # "lead": captions emitted before the first paragraph (a figure at the top of the page).
+    state = {"cur": None, "continues": False, "lead": 0}
     prev = None
     last_end = False  # previous text line ended a sentence
 
@@ -163,22 +214,40 @@ def page_blocks(lines, height, ctx):
             items = [("- " if bullet else "") + join_lines(p, ctx.compounds)
                      for p, bullet in zip(parts, cur["bullets"]) if p]
             text = "\n".join(items)
+        elif kind == "code" and cur.get("pseudo"):
+            text = "```\n" + "\n".join(_indent_rows(cur["rows"])) + "\n```"
         elif kind == "code":
             left = min(row["x0"] for row in cur["rows"] if row)
             text = "```\n" + "\n".join(_code_row(row, left) if row else ""
                                        for row in cur["rows"]) + "\n```"
         else:
             text = join_lines(parts, ctx.compounds)
+            if _is_panel_label(text):
+                kind = "label"
         blocks.append(text)
+        kinds.append(kind)
         ctx.last_kind, ctx.last_text = kind, text
 
     kept = [line for line in lines if line["text"] and not _is_noise(line, height, body)]
-    for line in kept:
+    right = max((line["x1"] for line in kept), default=0)
+    pseudo = _pseudocode_blocks(kept, body, margin, right)
+    pseudo_rows = {j for rows in pseudo.values() for j in rows}
+    for idx, line in enumerate(kept):
         text, font, size = line["text"], line["font"], line["size"]
         gap = line["base"] - prev["base"] if prev else 999
-        prev = line
+        last, prev = prev, line
         cur = state["cur"]
         mono = "mon" in font
+        if idx in pseudo or idx in pseudo_rows:
+            if idx in pseudo:
+                flush()
+                state["cur"] = {"kind": "para", "parts": [f"**{text}**"]}
+                flush()
+                state["cur"] = {"kind": "code", "rows": [], "pseudo": True}
+            else:
+                state["cur"]["rows"].append(line)
+            last_end = True
+            continue
         if _bold(font) and not mono and size >= body * _HEADING_RATIO:
             chapter = size >= body * _CHAPTER_RATIO
             joins = cur and cur["kind"] == "head" and cur["chapter"] == chapter and (
@@ -233,19 +302,40 @@ def page_blocks(lines, height, ctx):
             continue
         lead_bold = _bold(line["first_font"]) and "ital" not in line["first_font"] \
             and "mon" not in line["first_font"] and abs(line["first_size"] - body) < 1
-        new_para = (not cur or cur["kind"] != "para" or line["x0"] > margin + 6
+        # Indented block (list-item body, hanging indent of "a. ..." items): its lines continue
+        # the paragraph unless a new item starts or the previous line ended a short last line.
+        indented_cont = bool(cur and cur["kind"] == "para" and last and last["x0"] > margin + 6
+                             and line["x0"] >= last["x0"] - 3 and not _SUBITEM_RE.match(text)
+                             and not (last_end and last["x1"] < right - body * 2))
+        new_para = (not cur or cur["kind"] != "para" or (line["x0"] > margin + 6 and not indented_cont)
                     or gap > pitch * _PARA_GAP or lead_bold)
         if new_para:
-            if not blocks and not cur and not notes and line["x0"] <= margin + 3 and not lead_bold:
+            # Only figure material (captions, "(a) ... (b) ..." panel labels) so far on this page.
+            only_captions = all(k in ("caption", "label") for k in kinds) and (
+                not cur or cur["kind"] == "caption"
+                or (cur["kind"] == "para" and _is_panel_label(" ".join(cur["parts"]))))
+            starts_continuation = (only_captions and not notes and line["x0"] <= margin + 3
+                                   and not lead_bold and not _PANEL_LABEL_RE.match(text))
+            if starts_continuation:
                 state["continues"] = True
             flush()
+            if starts_continuation:
+                state["lead"] = len(blocks)
             state["cur"] = {"kind": "para", "parts": []}
         state["cur"]["parts"].append(text)
         last_end = bool(_SENTENCE_END_RE.search(text))
     flush()
     blocks.extend(notes)
-    continues = state["continues"] and ctx.last_kind == "para" and bool(blocks) and (
-        not _SENTENCE_END_RE.search(ctx.last_text) or blocks[0][:1].islower())
+    lead = state["lead"]
+    if lead and lead < len(blocks):
+        # The paragraph continues the previous page; the top-of-page captions follow it.
+        blocks = [blocks[lead]] + blocks[:lead] + blocks[lead + 1:]
+    first_para_lower = bool(blocks) and blocks[0][:1].islower()
+    continues = state["continues"] and prev_kind == "para" and bool(blocks) and (
+        not _SENTENCE_END_RE.search(prev_text) or first_para_lower)
+    if lead and not continues:
+        # Not a real continuation: restore the original order.
+        blocks = blocks[1:lead + 1] + [blocks[0]] + blocks[lead + 1:]
     return blocks, continues
 
 
