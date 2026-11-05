@@ -66,11 +66,9 @@ def build(src: Path, book_dir: Path, max_width: int) -> int:
         text = (src / name).read_text(encoding='utf-8')
         front = FRONT_FILES.get(name)
         body, imgs = clean_chapter(text, None if front else title)
-        if front:  # text only: a figure inside a front block would render as text
-            body = [f'<!-- front id="{front}" -->'] + [
-                b for b in body if not b.startswith('<!--')] + ['<!-- /front -->']
-        else:
-            images += imgs
+        if front:  # figure markers stay: export renders images inside front blocks
+            body = [f'<!-- front id="{front}" -->'] + body + ['<!-- /front -->']
+        images += imgs
         blocks += body
         problems += [f'{name}: footnote {n} has no definition' for n in missing_notes(body)]
 

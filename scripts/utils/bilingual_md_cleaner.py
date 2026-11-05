@@ -157,6 +157,10 @@ def clean_chapter(text: str, heading: str | None) -> tuple[list[str], list[str]]
             para = re.sub(r'(<small>\d+</small>)(\*+)', r'\2\1', para)
             if not para.strip():
                 continue
+            # Chinese-half leftovers without CJK: "——1up.com", or the repeated "⭐️⭐️⭐️" rating
+            if para.startswith('——') or (len(out) > 1 and para == out[-2]
+                                          and not any(c.isalnum() for c in para)):
+                continue
             out.append(f'> {para.strip()}' if quote else para)
             for num, k in list(renum.items())[before:]:
                 note = clean_inline(' '.join(defs.get(num, '').split('\n')))

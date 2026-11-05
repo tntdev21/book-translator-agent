@@ -65,3 +65,12 @@ def test_styled_paragraph_keeps_english_lines():
            '献给我的孩子们，<br>\n</p>\n')
     out, _ = run(src, None)
     assert out == ['To my kids,', 'with love.']
+
+
+def test_chinese_attribution_and_repeated_rating_dropped():
+    src = ('"Read it."\n\n—Steve Jackson\n\n“读吧。”\n\n——史蒂夫\n\n<hr>\n\n'
+           'One of "Five Books"\n\n—1up.com\n\n“五本书”之一\n\n——1up.com\n\n'
+           '⭐️⭐️⭐️\n\n—Midwest Book Review\n\n⭐️⭐️⭐️\n')
+    out, _ = run(src, None)
+    assert out == ['"Read it."', '—Steve Jackson', 'One of "Five Books"', '—1up.com',
+                   '⭐️⭐️⭐️', '—Midwest Book Review']
