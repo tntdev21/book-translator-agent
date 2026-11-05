@@ -50,7 +50,10 @@ When starting a new book translation:
    python scripts/extract.py input/source.pdf books/<id>/source/full_text.md
    python scripts/split_chunks.py books/<id>/source/full_text.md books/<id>/chunks/
    ```
-   `split_chunks.py` reads `category` from `book.yaml` to pick the Layer-2 template.
+   `split_chunks.py` auto-detects the category (Layer-2 template) from content; pass it explicitly
+   when that would be wrong: `split_chunks.py <src> <out> 3000 <category>`.
+   GitBook EN+CN markdown source: `python scripts/import_bilingual_md.py --book <id> --src <dir>`
+   replaces `extract.py` (writes `source/full_text.md`, `images/comic-*.png`, `cover.jpg`).
 
 2b. **Mark front matter + check TOC in the source** (before any translation):
    wrap title page / copyright / epigraph / dedication in
@@ -338,7 +341,7 @@ Each book lives in its own directory. `<id>` resolves from `--book <id>`, the
 | Manifest | `books/<id>/chunks/manifest.json` |
 | Translated | `books/<id>/translated/chunk_XXX.md` |
 | Final Output | `books/<id>/output/` |
-| Cover | `books/<id>/cover.jpg` (optional) |
+| Cover | `books/<id>/cover.jpg` (required: `export.py` exits 1 without it; `--proof` exempt) |
 | Custom Font | `fonts/*.ttf` (shared) |
 | Logs | `logs/*.txt` (shared) |
 
