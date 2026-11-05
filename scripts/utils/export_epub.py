@@ -213,6 +213,8 @@ p {
 }
 
 /* Quote attribution: right-aligned, like the source */
+aside.footnote { font-size: 0.875em; text-indent: 0; margin: 0.6em 0 1em; }
+aside.footnote p { text-indent: 0; margin: 0; }
 blockquote.praise {
     font-style: italic;
     margin: 1em 2em 0;
