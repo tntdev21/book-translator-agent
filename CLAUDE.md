@@ -32,6 +32,9 @@ This is a translation project. All instructions for Claude Code are contained in
 9. **TRANSLATED TEXT IS GUARDED** - A PreToolUse hook (`.claude/hooks/translated-guard.cjs`)
    blocks the main session from writing/removing `books/*/translated/**`, `chunks/*.md`,
    `source/**`. Fixes go to the owning translator (RETRY/REWORK); denials log to `logs/hook-denials.txt`.
+10. **MULTIPLE BOOKS → ALWAYS SET `BOOK_ID`** - with more than one `books/<id>/`, `fix.py`,
+    `log_terms.py`, `extract_term_map.py` fail with "Multiple books found" unless run as
+    `BOOK_ID=<id> ./venv/bin/python ...` (`export.py --book <id>` pins it for its own fix steps).
 
 ## 🆕 FOR NEW BOOKS (Automated Setup)
 
@@ -58,6 +61,26 @@ When starting a new book translation:
    python scripts/utils/validate_toc.py --book <id> books/<id>/chunks   # must PASS
    ```
    Translators copy markers verbatim (`validate-translation.py` errors otherwise); they never add them.
+
+2c. **Technical / illustrated books** (figures, equations, tables; `extraction.layout: technical`):
+   - Before translating, grep the source for interleaved/garbled blocks (often a hidden PDF
+     text layer: an invisible font used on one page only) and repair them in the source —
+     never let translators reconstruct text from the PDF.
+   - `(cid:N)` glyphs → map in `books/<id>/style/glyph_repairs.json` (fix.py step 3.5 applies it
+     plus split-diacritic repair, e.g. `Mart´ınez` → `Martínez`).
+   - Figures: `python scripts/extract_figures.py --book <id>` → `books/<id>/images/`; export
+     embeds each image above its translated caption line `Hình X.Y:` (colon
+     required; body references like "Hình 7.9 cho thấy…" are ignored). Caption lines render
+     slanted, one size smaller (`p.caption`; font from optional `fonts/<Family>/Oblique.ttf`,
+     built by `scripts/utils/make_oblique_font.py`).
+   - A caption that splits a sentence at a page break is fixed at the root by the extractor;
+     existing data is repaired with `scripts/utils/reflow_captions.py --book <id> [--apply]`.
+     Export only warns.
+   - Badly extracted tables/display equations: crop as images and have the translator replace the
+     text block with `<!-- figure id="table-N-M|eq-N-M" -->` (caption kept).
+   - Chapter heading style: `headings: {chapter_format: "Chương {n}: {title}", appendix_format: "Phụ lục {n}: {title}"}`
+     in `book.yaml`, applied at export (TOC included).
+   - Footnotes are translated; only the reference list stays verbatim.
 
 3. **First run of `python scripts/fix.py`**:
    - Automatically extracts character names from the book's own source
