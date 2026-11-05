@@ -20,7 +20,7 @@ class FakePage:
     def __init__(self, words):
         self.words = words
 
-    def extract_words(self, extra_attrs):
+    def extract_words(self, extra_attrs, **kwargs):
         assert extra_attrs == ["fontname", "size"]
         return self.words
 

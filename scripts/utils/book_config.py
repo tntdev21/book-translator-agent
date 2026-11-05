@@ -68,6 +68,9 @@ class BookConfig:
     paths: dict = field(default_factory=dict)
     page_sizes: dict = field(default_factory=dict)
     rights: dict = field(default_factory=dict)
+    # PDF extraction overrides, e.g. {"x_tolerance": 1.5} for tightly kerned
+    # sources whose word gaps fall under pdfplumber's default of 3pt.
+    extraction: dict = field(default_factory=dict)
 
     # -- resolved paths ---------------------------------------------------
 
@@ -219,7 +222,7 @@ def load_book(book_id: Optional[str] = None) -> BookConfig:
     known = {
         "id", "title_en", "title_vi", "author", "translator", "language_pair",
         "category", "epub_identifier", "chunk_size", "font",
-        "derivation", "paths", "page_sizes", "rights",
+        "derivation", "paths", "page_sizes", "rights", "extraction",
     }
     unknown = set(data) - known
     if unknown:

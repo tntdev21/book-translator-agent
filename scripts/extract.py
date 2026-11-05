@@ -29,8 +29,22 @@ def main():
         print(f"❌ Error: File not found: {input_file}")
         sys.exit(1)
 
-    # Detect file type
-    ext = os.path.splitext(input_file)[1].lower()
+    # A directory means "the ordered PDFs listed in book.yaml extraction.inputs",
+    # merged into one Markdown file (per-chapter PDFs of one book).
+    if os.path.isdir(input_file):
+        names = cfg.extraction.get("inputs")
+        if not names:
+            print("❌ Error: directory input needs `extraction.inputs` (ordered PDF names) in book.yaml")
+            sys.exit(1)
+        input_file = [os.path.join(argv[1], name) for name in names]
+        missing = [path for path in input_file if not os.path.isfile(path)]
+        if missing:
+            print(f"❌ Error: listed PDF not found: {', '.join(missing)}")
+            sys.exit(1)
+        ext = ".pdf"
+    else:
+        # Detect file type
+        ext = os.path.splitext(input_file)[1].lower()
 
     if ext == '.pdf':
         print("📄 Detected: PDF")
@@ -41,14 +55,22 @@ def main():
         max_pages = int(argv[3]) if len(argv) > 3 else None
 
         # Extract PDF
-        extract_pdf(input_file, output_file, max_pages)
+        # `inputs` only selects files above; everything else is an extract_pdf option.
+        options = {key: value for key, value in cfg.extraction.items() if key != "inputs"}
+        extract_pdf(input_file, output_file, max_pages, **options)
 
         # Post-process: Fix formatting issues
         print("\n🔧 Post-processing: Running fixes...")
-        print("  📝 Fixing sentence breaks...")
-        fixes = fix_sentence_breaks(output_file, backup=True)
-        if fixes > 0:
-            print(f"    ✓ Fixed {fixes} breaks")
+        if options.get("layout") == "technical":
+            # The technical layout already joins/dehyphenates lines; the generic
+            # sentence-break pass would merge fenced code lines and fences.
+            fixes = 0
+            print("  📝 Sentence-break fix skipped (layout: technical)")
+        else:
+            print("  📝 Fixing sentence breaks...")
+            fixes = fix_sentence_breaks(output_file, backup=True)
+            if fixes > 0:
+                print(f"    ✓ Fixed {fixes} breaks")
 
         print("  ➖ Normalizing dashes...")
         dash_changes = normalize_dashes_file(output_file)

@@ -191,13 +191,61 @@ def _fold_inline_small_caps(groups):
         del groups[top]
 
 
-def _line_groups(words, cid_repairs, unknown_cids):
-    """Group extracted words into logical, reading-order lines."""
+def _baseline_groups(words):
+    """Group words into lines by shared baseline instead of rounded `top`.
+
+    Italic/monospace/math faces have different ascent metrics, so their `top`
+    differs by ~1pt from the roman text on the same line. Words whose `bottom`
+    lies within 45% of the font size of the line's running mean baseline share
+    a line (the tolerance also absorbs a raised footnote-number digit).
+    """
+    clusters = []
+    for word in sorted(words, key=lambda item: (_bottom(item), item["x0"])):
+        if clusters and abs(_bottom(word) - clusters[-1]["ref"]) <= .45 * max(word["size"], clusters[-1]["size"]):
+            cluster = clusters[-1]
+            cluster["words"].append(word)
+            cluster["ref"] = sum(_bottom(item) for item in cluster["words"]) / len(cluster["words"])
+            cluster["size"] = max(cluster["size"], word["size"])
+        else:
+            clusters.append({"words": [word], "ref": _bottom(word), "size": word["size"]})
+    return {round(min(item["top"] for item in cluster["words"]), 1): cluster["words"] for cluster in clusters}
+
+
+def _wrap_inline_runs(line):
+    """Wrap runs of monospace words in backticks and of bold words in `**`."""
+    out = []
+    for word in line:
+        font = word["fontname"].lower()
+        kind = "mono" if "mon" in font else "bold" if ("medi" in font or "bold" in font) and "ital" not in font else None
+        prev = out[-1] if out else None
+        if kind and prev and prev.get("run") == kind:
+            glue = "" if word["x0"] - prev["x1"] < prev["size"] * _GLUE_GAP else " "
+            prev["text"] += glue + word["text"]
+            prev["x1"] = word["x1"]
+        else:
+            out.append(dict(word, run=kind) if kind else word)
+    for word in out:
+        mark = {"mono": "`", "bold": "**"}.get(word.get("run"))
+        if mark and mark not in word["text"]:
+            word["text"] = f"{mark}{word['text']}{mark}"
+    return out
+
+
+def _line_groups(words, cid_repairs, unknown_cids, technical=False):
+    """Group extracted words into logical, reading-order lines.
+
+    ``technical`` (opt-in) groups by baseline, skips small-caps folding, wraps
+    inline code/bold runs and records `words`, `base`, `first_*` per line for
+    `pdf_technical_layout`.
+    """
     words = _attach_superscripts(words)
-    groups = {}
-    for word in words:
-        groups.setdefault(round(word["top"], 1), []).append(word)
-    _fold_inline_small_caps(groups)
+    if technical:
+        groups = _baseline_groups(words)
+    else:
+        groups = {}
+        for word in words:
+            groups.setdefault(round(word["top"], 1), []).append(word)
+        _fold_inline_small_caps(groups)
     lines = []
     for top in sorted(groups):
         line = sorted(groups[top], key=lambda word: word["x0"])
@@ -206,6 +254,13 @@ def _line_groups(words, cid_repairs, unknown_cids):
         sized = [word for word in line if not word.get("sc")] or line
         weights = Counter((round(word["size"], 1), word["fontname"]) for word in sized for _ in word["text"])
         (size, font), _ = weights.most_common(1)[0]
+        extra = {}
+        if technical:
+            bottoms = sorted(_bottom(word) for word in line)
+            extra = {"words": line, "base": bottoms[len(bottoms) // 2],
+                     "first_size": line[0]["size"], "first_font": line[0]["fontname"].lower()}
+            if "mon" not in font.lower() and not ("medi" in font.lower() or "bold" in font.lower()):
+                line = _wrap_inline_runs(line)
         lines.append({
             # CIDs are repaired per word first so `(cid:N)` never reads as
             # punctuation at the edge of an italic run.
@@ -216,6 +271,7 @@ def _line_groups(words, cid_repairs, unknown_cids):
             "top": top,
             "bottom": max(word.get("bottom", word["top"] + word["size"]) for word in line),
             "size": size, "font": font.lower(),
+            **extra,
         })
     return lines
 
@@ -475,15 +531,25 @@ def _page_blocks(lines, body_size, margin_x0, indent_threshold, page_width):
     return blocks, first_role == "continuation"
 
 
-def extract_pdf(input_path, output_path, max_pages=None):
-    """Extract a PDF to Markdown while preserving detected structure."""
-    unknown_cids = set()
+_LAYOUT_OPTIONS = {"layout", "skip_fonts"}
+
+
+def _pdf_content(input_path, max_pages, x_tolerance, layout, skip_fonts, first_page, unknown_cids):
+    """Extract one PDF; return `(markdown_without_final_newline, pages_used)`."""
     cid_repairs = _CID_REPAIRS_BY_SOURCE.get(_source_fingerprint(input_path), {})
     with pdfplumber.open(input_path) as pdf:
         total = len(pdf.pages) if not max_pages else min(max_pages, len(pdf.pages))
         print(f"Extracting {total} pages from {input_path}...")
         pages = pdf.pages[:total]
-        raw_pages = [page.extract_words(extra_attrs=["fontname", "size"]) for page in pages]
+        raw_pages = [page.extract_words(x_tolerance=x_tolerance, extra_attrs=["fontname", "size"]) for page in pages]
+        if skip_fonts:
+            prefixes = tuple(skip_fonts)
+            raw_pages = [[w for w in words if not w["fontname"].split("+")[-1].startswith(prefixes)]
+                         for words in raw_pages]
+        if layout == "technical":
+            from .pdf_technical_layout import render_pages
+            page_lines = [_line_groups(words, cid_repairs, unknown_cids, technical=True) for words in raw_pages]
+            return render_pages(page_lines, [page.height for page in pages], first_page), total
         page_lines = [_line_groups(words, cid_repairs, unknown_cids) for words in raw_pages]
         all_lines = [line for lines in page_lines for line in lines]
         body_size = _body_size(all_lines)
@@ -497,7 +563,7 @@ def extract_pdf(input_path, output_path, max_pages=None):
             blocks, continues_previous_page = _page_blocks(lines, body_size, margin_x0, indent_threshold, page.width)
             citation_ranges = _citation_ranges(lines, body_size, margin_x0)
             trailing_citation = next((item for item in citation_ranges if item[1] == len(lines) - 1), None)
-            marker = f"<!-- Page {index} -->"
+            marker = f"<!-- Page {first_page + index - 1} -->"
 
             if (
                 content
@@ -526,6 +592,45 @@ def extract_pdf(input_path, output_path, max_pages=None):
             previous_trailing_citation = trailing_citation
             if index % 50 == 0:
                 print(f"  Processed {index}/{total}")
+    return content, total
+
+
+def extract_pdf(input_path, output_path, max_pages=None, x_tolerance=3, **options):
+    """Extract one PDF (or an ordered list of PDFs) to Markdown.
+
+    Detected structure is preserved. A list is concatenated into one file with
+    continuous `<!-- Page N -->` markers; ``max_pages`` then caps the total.
+
+    ``x_tolerance`` is pdfplumber's max horizontal gap (pt) still treated as
+    one word; lower it for sources whose word spacing is tighter than 3pt.
+
+    Opt-in ``options`` (the `extraction:` mapping of book.yaml; unknown keys
+    raise ``ValueError``). With none set, output is unchanged:
+
+    - ``layout: technical`` - LaTeX textbook layout: baseline line grouping,
+      numbered `#`/`##`/`###` headings, running-header removal, dehyphenation,
+      bullet/numbered lists, fenced code, captions, footnotes. See
+      `pdf_technical_layout` for the rules and known limits.
+    - ``skip_fonts: [prefix, ...]`` - drop words whose font name (subset tag
+      removed) starts with a prefix, e.g. figure-embedded `Times`, `Helvetica`.
+    """
+    unknown = set(options) - _LAYOUT_OPTIONS
+    if unknown:
+        raise ValueError(f"Unknown extraction option(s): {', '.join(sorted(unknown))}")
+    layout = options.get("layout")
+    if layout not in (None, "technical"):
+        raise ValueError(f"Unknown extraction layout: {layout!r}")
+    paths = [input_path] if isinstance(input_path, (str, os.PathLike)) else list(input_path)
+    unknown_cids = set()
+    content, first_page, remaining = "", 1, max_pages
+    for path in paths:
+        if max_pages and not remaining:
+            break
+        text, used = _pdf_content(path, remaining, x_tolerance, layout, options.get("skip_fonts"),
+                                  first_page, unknown_cids)
+        content += text
+        first_page += used
+        remaining = remaining - used if max_pages else None
     content = content.lstrip("\n") + "\n"
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as file:

@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Shared pytest fixtures for all test sessions"""
 
+import os
+
 import pytest
 from pathlib import Path
+
+# Book auto-detection only works with a single book under books/. Tests that
+# resolve a book implicitly are pinned to the original fixture book so adding
+# another book does not break them; an explicit BOOK_ID still wins.
+os.environ.setdefault("BOOK_ID", "most-human-human")
 
 
 @pytest.fixture
