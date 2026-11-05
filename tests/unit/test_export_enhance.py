@@ -54,6 +54,14 @@ def test_toc_links_resolve_after_mapping():
     assert "[Phụ lục A: Phỏng vấn các nhà thiết kế trò chơi](#phu-luc-a-phong-van-cac-nha-thiet-ke-tro-choi)" in md
 
 
+def test_long_toc_entry_naming_a_heading_stays_in_toc():
+    md = make_toc_links_clickable(
+        "# Mục lục\n\nLời kết: Niềm vui là điều quan trọng, thưa ông\n\nLời bạt: Mười năm sau\n\n"
+        "# Lời kết: Niềm vui là điều quan trọng, thưa ông\n\nBody.\n\n# Lời bạt: Mười năm sau\n")
+    assert "[Lời kết: Niềm vui là điều quan trọng, thưa ông](#" in md
+    assert "[Lời bạt: Mười năm sau](#" in md
+
+
 def test_inject_figures(tmp_path):
     (tmp_path / "fig-2-1.png").write_bytes(b"x")
     md = "Intro.\nHình 2.1: Cap\n\n**Hình 2.2: Missing**\n\nHình 2.1: again"

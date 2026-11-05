@@ -329,8 +329,10 @@ def make_toc_links_clickable(content: str, report: list | None = None) -> str:
             blank_line_count = 0
             continue
 
-        # Check if TOC has ended
-        if is_toc_end(stripped, blank_line_count, in_toc):
+        # Check if TOC has ended. An entry naming an existing top-level heading
+        # never ends it, however long ("Lời kết: Niềm vui là điều quan trọng, thưa ông").
+        names_heading = not stripped.startswith("#") and text_to_anchor(stripped) in existing_headings
+        if not names_heading and is_toc_end(stripped, blank_line_count, in_toc):
             in_toc = False
 
         # Count consecutive blank lines to detect TOC end
