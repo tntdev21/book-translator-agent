@@ -66,6 +66,7 @@ class TestTitleFallback:
         book_root = tmp_path / "books" / "stub-book"
         translated = book_root / "translated"
         translated.mkdir(parents=True)
+        (book_root / "cover.jpg").write_bytes(b"")  # export requires a cover
         # A TOC that passes validation so execution reaches the PDF branch.
         (translated / "chunk_001.md").write_text(
             "# MỤC LỤC\nCHƯƠNG 1\n\n# CHƯƠNG 1\n\nNội dung.\n",

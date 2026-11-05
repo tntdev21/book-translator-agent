@@ -94,6 +94,12 @@ def main():
         sys.exit(1)
     print(f"Font: {family.name}")
 
+    # A final export always carries a cover (books/<id>/cover.jpg); proof mode is exempt.
+    if not args.proof and not cfg.cover_path.is_file():
+        print(f"❌ Cover required: {cfg.cover_path} not found.")
+        print("💡 Add the book's cover as cover.jpg (or set paths.cover in book.yaml).")
+        sys.exit(1)
+
     # Load chunks based on mode (test/specific/full)
     # Proof mode is special: it reads the English extracted source
     # (source/full_text.md) directly for structural verification against the

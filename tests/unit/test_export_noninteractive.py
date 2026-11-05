@@ -31,6 +31,7 @@ def book(*, valid_toc: bool = False):
     shutil.rmtree(book_root, ignore_errors=True)
     translated = book_root / "translated"
     translated.mkdir(parents=True)
+    (book_root / "cover.jpg").write_bytes(b"")  # export requires a cover
     (book_root / "book.yaml").write_text(
         f'id: {BOOK_ID}\ntitle_vi: "Sách thử"\nauthor: "Tác giả"\n',
         encoding="utf-8",
@@ -79,6 +80,15 @@ class TestNonInteractiveDoesNotHang:
     def test_no_prompt_output_when_not_a_tty(self, book):
         result = _run_export("-f", "pdf", "--test")
         assert "Continue with export anyway?" not in result.stdout
+
+
+class TestCoverRequired:
+    def test_missing_cover_fails_before_export(self, book):
+        (book.parent / "cover.jpg").unlink()
+        result = _run_export("-f", "pdf", "--test", "--force")
+        assert result.returncode == 1
+        assert "Cover required" in result.stdout
+        assert "Exporting" not in result.stdout and "Validating TOC" not in result.stdout
 
 
 class TestForceFlag:
