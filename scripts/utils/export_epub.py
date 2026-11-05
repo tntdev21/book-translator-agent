@@ -60,6 +60,19 @@ img { display: block; width: 100%; height: 100%; object-fit: contain; }
 """
 
 _BASE_CSS = '''
+
+    /* Figures injected at export */
+    figure.figure-image {
+        margin: 1em auto 0.4em;
+        text-align: center;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    figure.figure-image img {
+        max-width: 100%;
+        height: auto;
+        width: auto;
+    }
 body {
     font-family: __FONT_STACK__;
     line-height: 1.8;
@@ -128,6 +141,34 @@ h2.section-subtitle,
     text-align: center;
     font-size: 1.2em;
     margin: 1em 0;
+}
+
+pre.code-listing {
+    font-family: monospace;
+    font-size: 0.8em;
+    white-space: pre-wrap;
+    margin: 0.6em 0;
+    padding: 0.4em 0.6em;
+    border-left: 2px solid #999;
+}
+
+p.caption {
+    font-style: oblique;
+    font-size: 0.875em;
+    word-spacing: 0.08em;  /* slanted glyphs visually narrow the gaps */
+    text-indent: 0;
+}
+
+p.table-caption {
+    text-indent: 0;
+    page-break-after: avoid;
+}
+
+.subsection-heading {
+    text-align: left;
+    font-size: 1.05em;
+    font-weight: bold;
+    margin: 0.9em 0 0.5em 0;
 }
 
 /* Paragraphs */
@@ -360,7 +401,7 @@ def split_content_by_chapters(html_content):
     return chapters
 
 def create_epub(html_content, title="", author="", identifier="", language="vi",
-                cover_path=None, font=None, fonts_dir=None):
+                cover_path=None, font=None, fonts_dir=None, images_dir=None):
     """Create EPUB book from processed HTML content.
 
     Args:
@@ -371,6 +412,7 @@ def create_epub(html_content, title="", author="", identifier="", language="vi",
         cover_path: Path to the cover image, if any.
         font: Font family folder under ``fonts_dir`` (default: fonts.DEFAULT_FONT).
         fonts_dir: Root holding one folder per font family (default: repo fonts/).
+        images_dir: Folder with figure PNGs; every ``images/<file>`` the HTML references is embedded.
     """
     book = epub.EpubBook()
 
@@ -408,6 +450,16 @@ def create_epub(html_content, title="", author="", identifier="", language="vi",
             media_type=f.media_type,
             content=f.path.read_bytes(),
         ))
+
+    # Embed figure images referenced as src="images/<file>"
+    if images_dir:
+        for name in sorted(set(re.findall(r'src="images/([^"]+)"', html_content))):
+            img = Path(images_dir) / name
+            if img.exists():
+                book.add_item(epub.EpubItem(uid=f"img_{Path(name).stem}", file_name=f"images/{name}",
+                                            media_type="image/png", content=img.read_bytes()))
+            else:
+                print(f"⚠️  EPUB: image missing, not embedded: {img}")
 
     # Split content into chapters
     chapters_data = split_content_by_chapters(html_content)

@@ -7,6 +7,7 @@ font is just a name change:
     fonts/<Family>/Bold.ttf
     fonts/<Family>/Italic.ttf
     fonts/<Family>/BoldItalic.ttf
+    fonts/<Family>/Oblique.ttf     (optional, captions; make_oblique_font.py)
 
 ``Regular`` is required; a missing Bold/Italic variant is skipped and the
 renderer synthesizes it. ``.otf`` is accepted in place of ``.ttf``.
@@ -30,6 +31,9 @@ VARIANTS = (
     ("Bold", "bold", "normal"),
     ("Italic", "normal", "italic"),
     ("BoldItalic", "bold", "italic"),
+    # Optional: Regular outlines slanted (scripts/utils/make_oblique_font.py), used by
+    # figure/table captions; families without it fall back to Italic.
+    ("Oblique", "normal", "oblique"),
 )
 EXTENSIONS = (".ttf", ".otf")
 MEDIA_TYPES = {".ttf": "font/ttf", ".otf": "font/otf"}

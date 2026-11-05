@@ -63,9 +63,9 @@ def test_font_face_css_and_stack(tmp_path):
 
 
 def test_repo_default_font_is_shipped():
-    """The bundled default must resolve with all four variants and its licence."""
+    """The bundled default must resolve with all four variants + caption Oblique and its licence."""
     fam = fonts.resolve_font()
-    assert len(fam.files) == 4
+    assert [f.variant for f in fam.files] == ["Regular", "Bold", "Italic", "BoldItalic", "Oblique"]
     assert (fonts.FONTS_DIR / fonts.DEFAULT_FONT / "OFL.txt").exists()
 
 

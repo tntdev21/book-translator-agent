@@ -146,6 +146,20 @@ def create_pdf(md_content, output_path, title="un-titled", proof_mode=False, cov
         display: block;
     }
 
+    /* Figures injected at export */
+    figure.figure-image {
+        margin: 1em auto 0.4em;
+        text-align: center;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    figure.figure-image img {
+        max-width: 100%;
+        max-height: 620pt;
+        height: auto;
+        width: auto;
+    }
+
     /* Copyright page */
     .copyright-page {
         page-break-before: always;
@@ -256,6 +270,37 @@ def create_pdf(md_content, output_path, title="un-titled", proof_mode=False, cov
         font-size: 1em;
         font-weight: bold;
         margin: 1em 0 0.8em 0;
+        page-break-after: avoid;
+    }
+
+    pre.code-listing {
+        font-family: "DejaVu Sans Mono", "Courier New", monospace;
+        font-size: 0.72em;
+        line-height: 1.35;
+        white-space: pre-wrap;
+        margin: 0.6em 0 0.8em 0;
+        padding: 0.4em 0.6em;
+        border-left: 2px solid #999;
+        text-indent: 0;
+    }
+
+    p.caption {
+        font-style: oblique;
+        font-size: 0.875em;
+        word-spacing: 0.08em;  /* slanted glyphs visually narrow the gaps */
+        text-indent: 0;
+    }
+
+    p.table-caption {
+        text-indent: 0;
+        page-break-after: avoid;
+        break-after: avoid;
+    }
+
+    .subsection-heading {
+        text-align: left;
+        font-weight: bold;
+        margin: 0.9em 0 0.5em 0;
         page-break-after: avoid;
     }
 

@@ -178,7 +178,7 @@ def is_toc_end(stripped: str, blank_line_count: int, in_toc: bool) -> bool:
     # End TOC if we detect actual body text (paragraph starting with capital letter)
     # This happens after the TOC listing when real content begins
     # Exclude known TOC patterns: "Chương X", section titles like "Lời kết"
-    if stripped and not stripped.startswith('Chương ') and not stripped.startswith('Chapter '):
+    if stripped and not stripped.startswith(('Chương ', 'Chapter ', 'Phụ lục ')):
         # Check if this looks like body text (longer than a title, or starts with specific phrases)
         if (len(stripped) > 30 and stripped[0].isupper()) or \
            stripped.startswith('Dành tặng cho') or \
@@ -218,6 +218,9 @@ def convert_toc_entry_to_link(stripped: str, existing_headings: set[str],
     chapter_match = re.match(r'^(Chương|Chapter|Chapitre|Capítulo|Capitolo)\s+(\d+)', stripped, re.IGNORECASE)
     if chapter_match:
         chapter_num = chapter_match.group(2)
+        if chapter_numbers and chapter_num in chapter_numbers:
+            # "# Chương 3: Title" headings carry the title in their anchor
+            return f'[{stripped}](#{chapter_numbers[chapter_num]})'
         anchor = f"chuong-{chapter_num}"
         # Only create link if this chapter exists in the content
         if anchor in existing_headings:
@@ -269,7 +272,8 @@ def scan_chapter_headings(lines: list[str]) -> tuple[set[str], dict[str, str]]:
             heading_text = stripped[2:].strip()
             anchor = SPECIAL_SECTIONS.get(heading_text) or text_to_anchor(heading_text)
             top_level.add(anchor)
-            num_match = re.match(r'^(\d+)\.\s', heading_text)
+            num_match = re.match(r'^(\d+)\.\s', heading_text) or re.match(
+                r'^(?:Chương|Chapter)\s+(\d+)\b', heading_text)
             if num_match:
                 by_number.setdefault(num_match.group(1), anchor)
     return top_level, by_number
@@ -425,6 +429,18 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
         line = lines[i]
         stripped = line.strip()
 
+        # Fenced code listing (``` on its own line; indentation is kept)
+        if stripped.startswith('```'):
+            code_lines = []
+            i += 1
+            while i < len(lines) and lines[i].strip() != '```':
+                code_lines.append(lines[i].rstrip())
+                i += 1
+            i += 1  # closing fence
+            code = '\n'.join(code_lines).strip('\n')
+            html_parts.append(f'<pre class="code-listing">{escape(code)}</pre>')
+            continue
+
         # Handle clickable TOC links (HTML format)
         if stripped.startswith('<a href="#'):
             html_parts.append(f'<p class="toc-entry">{stripped}</p>')
@@ -488,6 +504,19 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
             if len(html_parts) - open_idx == 2:
                 # Empty anchor-only block: keep it truly empty so CSS :empty applies
                 html_parts[open_idx:] = [html_parts[open_idx] + '</div>']
+            i += 1
+            continue
+
+        # Figure image injected at export: ![alt](src)
+        img_match = re.match(r'^!\[([^\]]*)\]\(([^)\s]+)\)(?:\{width=(\d+(?:\.\d+)?)pt\})?$', stripped)
+        if img_match:
+            # Keep a table caption ("Bảng X.Y: ...") on the same page as its table image.
+            if html_parts and re.match(r'^<p( class="[^"]*")?>Bảng \d', html_parts[-1]):
+                html_parts[-1] = re.sub(r'^<p( class="[^"]*")?>', '<p class="caption table-caption">', html_parts[-1])
+            style = f' style="width:{img_match.group(3)}pt"' if img_match.group(3) else ''
+            html_parts.append(
+                f'<figure class="figure-image"><img src="{escape(img_match.group(2))}" '
+                f'alt="{escape(img_match.group(1))}"{style}/></figure>')
             i += 1
             continue
 
@@ -555,6 +584,16 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
         # TOC title
         if stripped == 'Mục lục':
             html_parts.append('<h1 class="toc-title">MỤC LỤC</h1>')
+            i += 1
+            continue
+
+        # Sub-section headings (### / ####), e.g. "### 1.6.5 Title" in technical books.
+        sub_heading = re.match(r'^(#{3,4}) (.+)$', stripped)
+        if sub_heading:
+            level = len(sub_heading.group(1))
+            heading_text = sub_heading.group(2).strip()
+            anchor_id = text_to_anchor(heading_text)
+            html_parts.append(f'<h{level} id="{anchor_id}" class="subsection-heading">{heading_text}</h{level}>')
             i += 1
             continue
 
@@ -704,6 +743,13 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
             i += 1
             continue
 
+        # Figure/table caption ("Hình X.Y: ...", "Bảng X.Y: ..."): own paragraph, styled
+        # italic and one size smaller via the .caption class.
+        if re.match(r'^\**\s*(Hình|Bảng)\s+(\d+|[A-Z])\.\d+\s*:', stripped):
+            html_parts.append(f'<p class="caption">{stripped}</p>')
+            i += 1
+            continue
+
         # Regular paragraphs
         if stripped:
             # Check if this is a short line (book titles, lists, etc.)
@@ -727,6 +773,7 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
                         next_line.startswith('#') or
                         next_line.startswith('- ') or
                         next_line.startswith('<!--') or
+                        next_line.startswith('![') or
                         next_line.startswith('<a href=') or
                         next_line.startswith('CHƯƠNG') or
                         next_line == 'LỜI MỞ ĐẦU' or
@@ -749,6 +796,9 @@ def markdown_to_html_with_dialogue(md_content, include_cover=False, cover_path=N
     # Footnote numbers restart every chapter, so ids/hrefs are scoped per chapter
     # (fn-<chapter>-<n>); otherwise every link jumps to the first chapter's note.
     result = '\n'.join(html_parts)
+    # Inline strong: **text** -> <strong>text</strong> (run-in labels like "**Tóm tắt**";
+    # may open mid-word: "v**n**" = bold vertex index glued to "v" in the source PDF)
+    result = re.sub(r'(?<!\*)\*\*(?=\S)([^*\n<>]+?)(?<=\S)\*\*(?![\w*])', r'<strong>\1</strong>', result)
     # Inline emphasis: *text* -> <em>text</em> (titles, foreign words)
     result = re.sub(r'(?<![\w*])\*(?=\S)([^*\n<>]+?)(?<=\S)\*(?![\w*])', r'<em>\1</em>', result)
     segments = result.split('class="chapter-heading">')

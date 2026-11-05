@@ -18,6 +18,7 @@ exactly one book exists under books/. Title/author default to the book's
 book.yaml.
 """
 
+import os
 import sys
 import argparse
 from datetime import datetime
@@ -85,6 +86,7 @@ def main():
     args = parser.parse_args()
     cfg = get_config_from_args(args)
     font = args.font or cfg.font or None
+    images_dir = getattr(cfg, 'images_dir', None)  # optional figures folder
     try:
         family = resolve_font(font)  # fail before the slow merge/convert steps
     except FontNotFoundError as e:
@@ -197,6 +199,9 @@ def main():
     print(f"\n{'=' * 60}")
     print("🔧 Pre-processing: Running fixes...")
     print("=" * 60)
+    # The fixers resolve the book themselves; pin it (restored below) so --book reaches them.
+    prev_book_id = os.environ.get("BOOK_ID")
+    os.environ["BOOK_ID"] = cfg.id
     try:
         from utils.fix_sentence_breaks import fix_sentence_breaks
         from utils.normalize_dashes import normalize_dashes_file
@@ -225,6 +230,11 @@ def main():
     except Exception as e:
         print(f"⚠️  Warning: Could not run fixes: {e}")
         print("Continuing with export anyway...")
+    finally:
+        if prev_book_id is None:
+            os.environ.pop("BOOK_ID", None)
+        else:
+            os.environ["BOOK_ID"] = prev_book_id
 
     # Export to each format
     for idx, fmt in enumerate(formats_to_export, 1):
@@ -239,14 +249,19 @@ def main():
             merged_content = '\n\n'.join([f.read_text(encoding='utf-8') for f in files])
             from utils.markdown_converter import fill_title_page
             merged_content = fill_title_page(merged_content, cfg.title_vi or cfg.title_en, cfg.author, cfg.subtitle_vi)
+            from utils.export_enhance import apply_chapter_headings, inject_figures
+            merged_content = apply_chapter_headings(merged_content, getattr(cfg, 'headings', None))
             print(f"✓ Merged {len(merged_content):,} characters")
 
             if fmt == 'pdf':
                 from utils.export_pdf import create_pdf
                 from utils.markdown_converter import make_toc_links_clickable, markdown_to_html_with_dialogue
 
+                fig_md, figs = inject_figures(merged_content, images_dir, 'file')
+                if figs:
+                    print(f"✓ Injected {len(figs)} figure(s)")
                 print("Processing TOC links...")
-                md_with_toc_links = make_toc_links_clickable(merged_content)
+                md_with_toc_links = make_toc_links_clickable(fig_md)
                 print("✓ TOC links processed")
 
                 print("Converting markdown to HTML...")
@@ -280,8 +295,11 @@ def main():
                 from utils.export_epub import create_epub
                 from ebooklib import epub as epub_lib
 
+                fig_md, figs = inject_figures(merged_content, images_dir, 'relative')
+                if figs:
+                    print(f"✓ Injected {len(figs)} figure(s)")
                 print("Processing TOC links...")
-                md_with_toc_links = make_toc_links_clickable(merged_content)
+                md_with_toc_links = make_toc_links_clickable(fig_md)
                 print("✓ TOC links processed")
 
                 print("Converting markdown to HTML...")
@@ -302,6 +320,7 @@ def main():
                     identifier=cfg.epub_identifier or f"{cfg.id}-vi",
                     cover_path=cfg.cover_path,
                     font=font,
+                    images_dir=images_dir if figs else None,
                 )
                 chapter_count = len(book.toc) if book.toc else 0
                 print(f"✓ Created {chapter_count} chapters")
@@ -319,8 +338,15 @@ def main():
                 from utils.markdown_converter import make_toc_links_clickable, markdown_to_html_with_dialogue
                 from utils.export_html import create_html
 
+                fig_md, figs = inject_figures(merged_content, images_dir, 'relative')
+                if figs:
+                    import shutil
+                    (output_dir / 'images').mkdir(exist_ok=True)
+                    for name in figs:
+                        shutil.copy2(images_dir / name, output_dir / 'images' / name)
+                    print(f"✓ Injected {len(figs)} figure(s) (copied to {output_dir / 'images'})")
                 print("Processing TOC links...")
-                md_with_toc_links = make_toc_links_clickable(merged_content)
+                md_with_toc_links = make_toc_links_clickable(fig_md)
                 print("✓ TOC links processed")
 
                 print("Converting markdown to HTML...")

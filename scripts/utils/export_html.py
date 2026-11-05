@@ -100,6 +100,35 @@ def create_html(html_content, title="untitled", cover_path=None, font=None, font
             height: auto;
         }}
 
+    p.caption {{
+        font-style: oblique;
+        font-size: 0.875em;
+        word-spacing: 0.08em;  /* slanted glyphs visually narrow the gaps */
+        text-indent: 0;
+    }}
+    pre.code-listing {{
+        font-family: "DejaVu Sans Mono", "Courier New", monospace;
+        font-size: 0.8em;
+        white-space: pre-wrap;
+        margin: 0.6em 0;
+        padding: 0.4em 0.6em;
+        border-left: 2px solid #999;
+    }}
+
+    /* Figures injected at export */
+    figure.figure-image {{
+        margin: 1em auto 0.4em;
+        text-align: center;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }}
+    figure.figure-image img {{
+        max-width: 100%;
+        max-height: 620pt;
+        height: auto;
+        width: auto;
+    }}
+
         /* Copyright */
         .copyright-page {{
             page-break-before: always;
